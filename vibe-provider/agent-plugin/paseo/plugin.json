@@ -1,0 +1,15 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "paseo_host",
+  "version": "1.0.0",
+  "description": "Paseo host integration: structured-output submission for orchestrators.",
+  "author": {
+    "name": "Paseo"
+  },
+  "extensions": {
+    "ai.mistral.vibe": {
+      "schemaVersion": 1,
+      "toolNamespace": "paseo_host"
+    }
+  }
+}

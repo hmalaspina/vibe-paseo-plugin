@@ -1,0 +1,10 @@
+# Captures régénérables (relancer spike/vibe-spike.mjs pour les produire)
+spike/transcript-*.jsonl
+
+# Node
+node_modules/
+# package-lock versionné depuis B5 (ajv dépendance du provider — mission)
+
+# Divers
+*.log
+.DS_Store

@@ -1,0 +1,25 @@
+{
+  "name": "vibe-provider",
+  "private": true,
+  "version": "0.1.0",
+  "files": [
+    "paseo-plugin.json",
+    "OVERVIEW.md",
+    "index.server.ts",
+    "icon.svg",
+    "server/",
+    "agent-plugin/"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@getpaseo/plugin": "0.17.3",
+    "@types/node": "^22.10.0",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "ajv": "^8.20.0"
+  },
+  "license": "Apache-2.0"
+}
