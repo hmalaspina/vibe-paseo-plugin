@@ -371,7 +371,7 @@ export class AgentSession {
   private client: AppServerClient | null = null;
   private entries = new Map<string, HistoryEntry>();
   private turns = new Map<string, TrackedTurn>();
-  private openCallbacks = new Map<string, { detailKind: string; pathScopeChoices: string[]; vibeSessionId: string; permissionSessionId: string }>();
+  private openCallbacks = new Map<string, { detailKind: string; pathScopeChoices: string[]; vibeSessionId: string; permissionSessionId: string; questions?: Array<{ question: string; header: string; labels: string[] }> }>();
   private unsubs: Array<() => void> = [];
   private closeEmitted = false;
   private closing = false;
@@ -1191,7 +1191,7 @@ export class AgentSession {
           result: { callbackId: permissionId, output },
         });
       } else if (record.detailKind === "user_input") {
-        const answers = approvalAnswers(response);
+        const answers = userQuestionAnswers(response, record.questions ?? []);
         const output: CallbackUserInputOutput = {
           type: "user_input",
           result: { answers, cancelled: response.behavior !== "allow" },
@@ -1287,18 +1287,33 @@ export class AgentSession {
       this.emit({ type: "session.permission", sessionId: permissionSessionId, request });
     } else if (detail?.kind === "user_input") {
       const userInput = detail as UserInputCallbackDetail;
-      this.openCallbacks.set(callback.callbackId, { detailKind: "user_input", pathScopeChoices: [], vibeSessionId: callback.sessionId ?? this.vibeSessionId, permissionSessionId });
+      // Paseo's question UI (question-form-card) renders the widget from
+      // `request.input.questions` and keys the human's answers by each
+      // question's `header` — the shape every first-class provider uses
+      // (claude, omp, opencode). `suggestions` never reaches that widget.
+      const questions = (userInput.request?.questions ?? []).map((question) => ({
+        question: question.question ?? "",
+        header: question.header ?? "",
+        options: (question.options ?? []).map((option) => ({ label: option.label ?? "", description: option.description ?? "" })),
+        multiSelect: Boolean(question.multiSelect),
+        // Vibe adds the "Other" free-text choice unless hideOther is set.
+        allowOther: !question.hideOther,
+      }));
+      this.openCallbacks.set(callback.callbackId, {
+        detailKind: "user_input",
+        pathScopeChoices: [],
+        vibeSessionId: callback.sessionId ?? this.vibeSessionId,
+        permissionSessionId,
+        // Kept to rebuild vibe's per-question answers from the UI's
+        // header-keyed answer record on the way back.
+        questions: questions.map((mapped) => ({ question: mapped.question, header: mapped.header, labels: mapped.options.map((option) => option.label) })),
+      });
       const request: ProviderPermissionRequest = {
         id: callback.callbackId,
         name: "user_question",
         kind: "question",
         title: callback.title ?? "Vibe asked a question",
-        suggestions: (userInput.request?.questions ?? []).map((question) => ({
-          question: question.question ?? "",
-          header: question.header ?? "",
-          options: (question.options ?? []).map((option) => ({ label: option.label ?? "", description: option.description ?? "" })),
-          multiSelect: Boolean(question.multiSelect),
-        })),
+        input: { questions },
       };
       this.emit({ type: "session.permission", sessionId: permissionSessionId, request });
     } else {
@@ -2315,16 +2330,31 @@ function approvalDecision(response: ProviderPermissionResponse): CallbackApprova
   return "approve";
 }
 
-function approvalAnswers(response: ProviderPermissionResponse): CallbackUserInputOutput["result"]["answers"] {
-  const input = (response as ProviderPermissionResponse & { updatedInput?: { answers?: unknown[] } }).updatedInput ?? {};
-  const answers = (input as { answers?: unknown }).answers;
-  if (!Array.isArray(answers)) return [];
-  return answers.map((answer) => {
-    if (answer && typeof answer === "object") {
-      const record = answer as Record<string, unknown>;
-      return { question: record.question as string | undefined, answer: record.answer as string | undefined, isOther: Boolean(record.isOther) };
-    }
-    return { answer: String(answer) };
+/**
+ * Paseo's question UI serializes the human's answers as a record keyed by
+ * question header (multi-select labels joined with ", ", "Other" free text
+ * appended). Vibe's user_input callback expects one answer object per
+ * question, in request order; isOther marks an answer no option label matches.
+ */
+function userQuestionAnswers(
+  response: ProviderPermissionResponse,
+  questions: Array<{ question: string; header: string; labels: string[] }>,
+): CallbackUserInputOutput["result"]["answers"] {
+  if (response.behavior !== "allow") return [];
+  const updated = (response.updatedInput ?? {}) as { answers?: unknown };
+  const byHeader = updated.answers && typeof updated.answers === "object" && !Array.isArray(updated.answers)
+    ? (updated.answers as Record<string, unknown>)
+    : {};
+  return questions.map((question) => {
+    const raw = typeof byHeader[question.header] === "string"
+      ? (byHeader[question.header] as string)
+      : typeof byHeader[question.question] === "string"
+        ? (byHeader[question.question] as string)
+        : "";
+    const parts = raw ? raw.split(", ") : [];
+    const labels = new Set(question.labels);
+    const isOther = parts.length > 0 && parts.some((part) => !labels.has(part));
+    return { question: question.question, answer: raw, isOther };
   });
 }
 
