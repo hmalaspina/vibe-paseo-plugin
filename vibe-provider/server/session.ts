@@ -2353,7 +2353,9 @@ function userQuestionAnswers(
         : "";
     const parts = raw ? raw.split(", ") : [];
     const labels = new Set(question.labels);
-    const isOther = parts.length > 0 && parts.some((part) => !labels.has(part));
+    // A label may itself contain ", " — a whole-string match against a known
+    // label is always a chosen option, never "Other".
+    const isOther = !labels.has(raw) && parts.some((part) => !labels.has(part));
     return { question: question.question, answer: raw, isOther };
   });
 }
